@@ -1,4 +1,4 @@
-# Perspective correction based on aruco markers
+# Open CV perspective correction based on aruco markers
 This example code detects a square arena that has aruco markers (46, 47, 48, 49) at the corners. A perspective correction is then applied so that the detected corners are transformed to a square shape on screen.
 
 ![Screenshot](screenshot.jpg)

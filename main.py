@@ -3,11 +3,6 @@ import numpy as np
 
 RED = (0, 0, 255) # red in BGR colorspace
 WINDOW_NAME = 'Video'
-# original coordinates before perspective transformation
-originalArucos = {}
-
-# transformed coordinates
-arucos = {}
 
 def getAveragePoint(points):
     xSum = ySum = 0
@@ -17,6 +12,45 @@ def getAveragePoint(points):
         xSum += x
         ySum += y
     return np.float32([xSum / numberOfPoints, ySum / numberOfPoints])
+
+def drawCircleOnArucos(frame, arucos):
+    for aruco in arucos.values():
+        centerPoint = getAveragePoint(aruco)
+        x, y = centerPoint
+        cv2.circle(frame, [round(x), round(y)], 5, RED, 2)
+
+def applyPerspectiveCorrection(frame, arucos, topLeftId, topRightId, bottomLeftId, bottomRightId):
+    if (topLeftId not in arucos or topRightId not in arucos or bottomLeftId not in arucos or bottomRightId not in arucos):
+        return (frame, arucos)
+
+    # square output
+    height = frame.shape[0]
+    width = height
+    margin = 5
+    detectedArenaCorners = [
+        arucos[topLeftId],
+        arucos[topRightId],
+        arucos[bottomLeftId],
+        arucos[bottomRightId]
+    ]
+    sourceMatrix = np.float32(list(map(getAveragePoint, detectedArenaCorners)))
+    targetMatrix = np.float32([
+        [margin, margin], # top left
+        [width - margin, margin], # top right
+        [margin, height - margin], # bottom left
+        [width - margin, height - margin] # bottom right
+    ])
+
+    # apply perspective correction to the frame
+    perspectiveMatrix = cv2.getPerspectiveTransform(sourceMatrix, targetMatrix)
+    transformedFrame = cv2.warpPerspective(frame, perspectiveMatrix, (width, height), cv2.INTER_NEAREST)
+
+    # apply perspective correction to the detected markers
+    transformedArucos = {}
+    for id in arucos:
+        transformedArucos[id] = cv2.perspectiveTransform(np.array([arucos[id]]), perspectiveMatrix)[0]
+
+    return (transformedFrame, transformedArucos)
 
 def main():
     cv2.namedWindow(WINDOW_NAME)
@@ -30,6 +64,10 @@ def main():
     arucoDictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
     detectorParameters =  cv2.aruco.DetectorParameters()
     arucoDetector = cv2.aruco.ArucoDetector(arucoDictionary, detectorParameters)
+
+    # original coordinates before perspective transformation get persisted in this dictionary.
+    # If some of them flicker, the transformation stays consistent this way.
+    originalArucos = {}
 
     if capture.isOpened():
         returnValue, frame = capture.read()
@@ -45,38 +83,9 @@ def main():
             originalArucos[ids[index][0]] = cornerPoints[0]
 
         # perspective correction
-        if (46 in originalArucos and 47 in originalArucos and 48 in originalArucos and 49 in originalArucos):
-            # square output
-            height = frame.shape[0]
-            width = height
-            margin = 5
-            detectedArenaCorners = [
-                originalArucos[46], # top left
-                originalArucos[47], # top right
-                originalArucos[48], # bottom left
-                originalArucos[49] # bottom right
-            ]
-            sourceMatrix = np.float32(list(map(getAveragePoint, detectedArenaCorners)))
-            targetMatrix = np.float32([
-                [margin, margin], # top left
-                [width - margin, margin], # top right
-                [margin, height - margin], # bottom left
-                [width - margin, height - margin] # bottom right
-            ])
+        frame, arucos = applyPerspectiveCorrection(frame, originalArucos, 46, 47, 48, 49)
 
-            # apply perspective correction to the frame
-            perspectiveMatrix = cv2.getPerspectiveTransform(sourceMatrix, targetMatrix)
-            frame = cv2.warpPerspective(frame, perspectiveMatrix, (width, height), cv2.INTER_NEAREST)
-
-            # apply perspective correction to the detected markers
-            for id in originalArucos:
-                arucos[id] = cv2.perspectiveTransform(np.array([originalArucos[id]]), perspectiveMatrix)[0]
-
-        # draw a circle on each aruco
-        for aruco in arucos.values():
-            centerPoint = getAveragePoint(aruco)
-            x, y = centerPoint
-            cv2.circle(frame, [round(x), round(y)], 5, RED, 2)
+        drawCircleOnArucos(frame, arucos)
 
         # display frame
         cv2.imshow(WINDOW_NAME, frame)
